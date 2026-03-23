@@ -1,0 +1,22 @@
+[package]
+name = "dicom_codecs_nif"
+version = "0.1.0"
+edition = "2021"
+publish = false
+
+[lib]
+name = "dicom_codecs_nif"
+crate-type = ["cdylib"]
+
+[dependencies]
+rustler = "0.36"
+
+# JPEG decoding/encoding
+jpeg-decoder = "0.3"
+jpeg-encoder = { version = "0.6", features = ["simd"] }
+
+# JPEG 2000 via OpenJPEG
+openjp2 = "0.8"
+
+# JPEG-LS via CharLS
+charls = "0.4"
