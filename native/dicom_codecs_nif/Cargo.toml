@@ -2,6 +2,7 @@
 name = "dicom_codecs_nif"
 version = "0.1.0"
 edition = "2021"
+license = "MIT"
 publish = false
 
 [lib]
@@ -9,14 +10,18 @@ name = "dicom_codecs_nif"
 crate-type = ["cdylib"]
 
 [dependencies]
-rustler = "0.36"
+rustler = "0.38"
 
-# JPEG decoding/encoding
-jpeg-decoder = "0.3"
-jpeg-encoder = { version = "0.6", features = ["simd"] }
+# JPEG: decode (baseline, extended 8-bit, lossless) and baseline encode
+jpeg-decoder = { version = "0.3", default-features = false }
+jpeg-encoder = "0.7"
 
-# JPEG 2000 via OpenJPEG
-openjp2 = "0.8"
+# JPEG 2000: OpenJPEG ported to Rust, no C toolchain needed
+openjp2 = { version = "0.6.1", default-features = false, features = ["std"] }
 
-# JPEG-LS via CharLS
-charls = "0.4"
+# JPEG-LS: CharLS (C++), built with CMake and linked statically
+charls-sys = { version = "2.4", features = ["static"] }
+
+[profile.release]
+lto = true
+codegen-units = 1

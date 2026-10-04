@@ -10,8 +10,10 @@ defmodule DicomCodecs.MixProject do
       version: @version,
       elixir: "~> 1.15",
       start_permanent: Mix.env() == :prod,
+      elixirc_paths: elixirc_paths(Mix.env()),
       deps: deps(),
-      description: "NIF-backed DICOM pixel data codecs (JPEG, JPEG 2000, JPEG-LS) for the dicom library",
+      description:
+        "NIF-backed DICOM pixel data codecs (JPEG, JPEG 2000, JPEG-LS) for the dicom library",
       package: package(),
       docs: docs(),
       aliases: aliases()
@@ -25,12 +27,26 @@ defmodule DicomCodecs.MixProject do
     ]
   end
 
+  defp elixirc_paths(:test), do: ["lib", "test/support"]
+  defp elixirc_paths(_), do: ["lib"]
+
   defp deps do
     [
       {:dicom, "~> 0.9", optional: true},
-      {:rustler, "~> 0.36", runtime: false},
-      {:rustler_precompiled, "~> 0.8"},
+      # Needed only to build the NIF from source; see DicomCodecs.Native.
+      {:rustler, "~> 0.38", optional: true},
+      {:rustler_precompiled, "~> 0.10"},
       {:ex_doc, "~> 0.34", only: :dev, runtime: false}
+    ]
+  end
+
+  # `mix test` also runs the crate's unit tests.
+  defp aliases do
+    [
+      test: [
+        "cmd cargo test --release --quiet --manifest-path native/dicom_codecs_nif/Cargo.toml",
+        "test"
+      ]
     ]
   end
 
@@ -38,7 +54,8 @@ defmodule DicomCodecs.MixProject do
     [
       licenses: ["MIT"],
       links: %{"GitHub" => @source_url},
-      files: ~w(lib native .formatter.exs mix.exs README.md LICENSE CHANGELOG.md checksum-*.exs)
+      files:
+        ~w(lib native/dicom_codecs_nif/src native/dicom_codecs_nif/Cargo.toml native/dicom_codecs_nif/Cargo.lock .formatter.exs mix.exs README.md LICENSE THIRD_PARTY_NOTICES.md CHANGELOG.md checksum-*.exs)
     ]
   end
 
@@ -46,11 +63,7 @@ defmodule DicomCodecs.MixProject do
     [
       main: "readme",
       source_url: @source_url,
-      extras: ["README.md", "CHANGELOG.md"]
+      extras: ["README.md", "CHANGELOG.md", "THIRD_PARTY_NOTICES.md"]
     ]
-  end
-
-  defp aliases do
-    []
   end
 end

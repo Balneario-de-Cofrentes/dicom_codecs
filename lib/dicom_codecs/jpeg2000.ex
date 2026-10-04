@@ -1,12 +1,20 @@
 defmodule DicomCodecs.JPEG2000 do
   @moduledoc """
-  JPEG 2000 codec for DICOM transfer syntaxes.
+  JPEG 2000 codec for DICOM transfer syntaxes: Lossless Only and JPEG 2000
+  (lossless or lossy).
 
-  Supports JPEG 2000 Lossless Only and JPEG 2000 (lossy).
-  Backed by Rust NIF using the `openjpeg-sys` crate.
+  Backed by the `openjp2` crate, OpenJPEG ported to Rust. Decoding accepts
+  J2K codestreams and JP2 files of 1 to 16 bits, signed or unsigned, and
+  inverts any colour transform. Encoding writes a lossless J2K codestream
+  (reversible 5/3 wavelet). The reversible colour transform is applied only
+  when `:photometric_interpretation` is `"YBR_RCT"`, so RGB frames stay RGB.
+
+  Errors are `{:error, {reason, message}}` as described in `DicomCodecs`.
   """
 
   @behaviour Dicom.Codec
+
+  alias DicomCodecs.{Metadata, Native}
 
   @transfer_syntaxes [
     # JPEG 2000 Image Compression (Lossless Only)
@@ -19,24 +27,12 @@ defmodule DicomCodecs.JPEG2000 do
   def transfer_syntax_uids, do: @transfer_syntaxes
 
   @impl true
-  def decode(frame_binary, metadata) when is_binary(frame_binary) do
-    DicomCodecs.Native.jpeg2000_decode(frame_binary, normalize_metadata(metadata))
+  def decode(frame_binary, metadata) when is_binary(frame_binary) and is_map(metadata) do
+    Native.jpeg2000_decode(frame_binary, Metadata.normalize(metadata))
   end
 
   @impl true
-  def encode(raw_pixels, metadata) when is_binary(raw_pixels) do
-    DicomCodecs.Native.jpeg2000_encode(raw_pixels, normalize_metadata(metadata))
-  end
-
-  defp normalize_metadata(metadata) do
-    %{
-      rows: Map.get(metadata, :rows, 0),
-      columns: Map.get(metadata, :columns, 0),
-      bits_allocated: Map.get(metadata, :bits_allocated, 8),
-      bits_stored: Map.get(metadata, :bits_stored, 8),
-      samples_per_pixel: Map.get(metadata, :samples_per_pixel, 1),
-      photometric_interpretation: Map.get(metadata, :photometric_interpretation, "MONOCHROME2"),
-      pixel_representation: Map.get(metadata, :pixel_representation, 0)
-    }
+  def encode(raw_pixels, metadata) when is_binary(raw_pixels) and is_map(metadata) do
+    Native.jpeg2000_encode(raw_pixels, Metadata.normalize(metadata))
   end
 end

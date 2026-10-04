@@ -2,23 +2,45 @@ defmodule DicomCodecs do
   @moduledoc """
   NIF-backed DICOM pixel data codecs for the `dicom` library.
 
-  Provides hardware-accelerated decompression and compression for common
-  DICOM transfer syntaxes via Rust NIFs wrapping established codec libraries:
+  Each codec implements `Dicom.Codec` with Rust NIFs (Rustler) over these crates:
 
-  - **JPEG Baseline/Extended/Lossless** — via `image` crate (libjpeg-turbo compatible)
-  - **JPEG 2000** — via `jpeg2k` crate (OpenJPEG bindings)
-  - **JPEG-LS** — via `charls` crate (CharLS bindings)
+  - **JPEG Baseline/Extended/Lossless**: `jpeg-decoder` to decode, `jpeg-encoder`
+    to encode (lossy Baseline only)
+  - **JPEG 2000**: `openjp2`, OpenJPEG ported to Rust
+  - **JPEG-LS**: `charls-sys`, bindings to CharLS
 
   ## Usage
 
-  Add `dicom_codecs` to your dependencies and codecs are auto-registered
-  with `Dicom.Codec.Registry` at application startup:
+  Add `dicom_codecs` to your dependencies. The application registers every
+  codec with `Dicom.Codec.Registry` at startup, so a codec can be looked up by
+  the Transfer Syntax UID of the data set:
 
-      # mix.exs
-      {:dicom_codecs, "~> 0.1"}
+      {:ok, codec} = Dicom.Codec.Registry.lookup(transfer_syntax_uid)
+      {:ok, pixels} = codec.decode(compressed_frame, %{rows: 512, columns: 512, bits_allocated: 16})
 
-  Then use `Dicom.PixelData.decode_frame/2` or `decode_all_frames/1`
-  as usual — compressed frames are transparently decompressed.
+  ## Frames and metadata
+
+  Decoding returns one frame of native pixel data: samples interleaved by
+  pixel (Planar Configuration 0), little-endian, `:bits_allocated / 8` bytes
+  per sample. Encoding expects the same layout.
+
+  `:rows` and `:columns` are required. `:bits_allocated` defaults to 8,
+  `:bits_stored` to `:bits_allocated`, `:samples_per_pixel` to 1,
+  `:pixel_representation` and `:planar_configuration` to 0, and
+  `:photometric_interpretation` to `"MONOCHROME2"` (or `"RGB"` for three
+  samples). A decoded frame must match the metadata in size, samples per pixel
+  and bytes per sample.
+
+  ## Errors
+
+  Every NIF runs on a dirty CPU scheduler and returns `{:error, {reason, message}}`
+  instead of raising, where `reason` is one of:
+
+  - `:invalid_metadata`: the metadata is malformed or describes an impossible frame
+  - `:metadata_mismatch`: the input or the decoded frame disagrees with the metadata
+  - `:unsupported`: valid input this codec does not handle
+  - `:decode_failed` / `:encode_failed`: the codec rejected the data
+  - `:internal_error`: a bug inside the codec (including a caught panic)
 
   ## Supported Transfer Syntaxes
 

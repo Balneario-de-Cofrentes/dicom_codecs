@@ -1,95 +1,87 @@
-use rustler::{Binary, Env, NifMap, NifResult, OwnedBinary};
-use std::io::Write;
+//! Rustler NIFs for DICOM pixel data codecs.
+//!
+//! Every NIF decodes or encodes a whole frame, which takes far longer than the
+//! 1 ms budget of a normal scheduler, so all of them run on dirty CPU schedulers.
+//! They return `{:ok, binary}` or `{:error, {reason, message}}`; a panic inside a
+//! codec becomes `{:error, {:internal_error, message}}`.
 
+use rustler::{Binary, Env, Term};
+
+mod error;
+mod frame;
 mod jpeg;
 mod jpeg2000;
 mod jpegls;
 
-/// Image metadata passed from Elixir as a map.
-#[derive(Debug, NifMap)]
-pub struct Metadata {
-    pub rows: u32,
-    pub columns: u32,
-    pub bits_allocated: u32,
-    pub bits_stored: u32,
-    pub samples_per_pixel: u32,
-    pub photometric_interpretation: String,
-    pub pixel_representation: u32,
+use error::CodecError;
+use frame::{Image, Metadata};
+
+// DICOM native pixel data is little-endian and codecs exchange samples in host
+// order; frame sizes (up to 65535² × 3 × 2 bytes) need a 64-bit usize.
+#[cfg(any(target_endian = "big", not(target_pointer_width = "64")))]
+compile_error!("dicom_codecs_nif supports 64-bit little-endian targets only");
+
+type Decoder = fn(&[u8], &Metadata) -> Result<Image, CodecError>;
+type Encoder = fn(&[u8], &Metadata) -> Result<Vec<u8>, CodecError>;
+
+#[rustler::nif(schedule = "DirtyCpu")]
+fn jpeg_decode<'a>(env: Env<'a>, data: Binary<'a>, meta: Term<'a>) -> Term<'a> {
+    decode_frame(env, &data, meta, jpeg::decode)
 }
 
-// -- JPEG --
-
-#[rustler::nif]
-fn jpeg_decode<'a>(env: Env<'a>, data: Binary<'a>, meta: Metadata) -> NifResult<Binary<'a>> {
-    let raw = jpeg::decode(data.as_slice(), &meta)
-        .map_err(|e| rustler::Error::Term(Box::new(format!("jpeg_decode: {e}"))))?;
-
-    let mut out = OwnedBinary::new(raw.len()).ok_or(rustler::Error::Atom("alloc_failed"))?;
-    out.as_mut_slice().write_all(&raw).map_err(|_| rustler::Error::Atom("write_failed"))?;
-    Ok(out.release(env))
+#[rustler::nif(schedule = "DirtyCpu")]
+fn jpeg_encode<'a>(env: Env<'a>, data: Binary<'a>, meta: Term<'a>) -> Term<'a> {
+    encode_frame(env, &data, meta, jpeg::encode)
 }
 
-#[rustler::nif]
-fn jpeg_encode<'a>(env: Env<'a>, data: Binary<'a>, meta: Metadata) -> NifResult<Binary<'a>> {
-    let compressed = jpeg::encode(data.as_slice(), &meta)
-        .map_err(|e| rustler::Error::Term(Box::new(format!("jpeg_encode: {e}"))))?;
-
-    let mut out =
-        OwnedBinary::new(compressed.len()).ok_or(rustler::Error::Atom("alloc_failed"))?;
-    out.as_mut_slice()
-        .write_all(&compressed)
-        .map_err(|_| rustler::Error::Atom("write_failed"))?;
-    Ok(out.release(env))
+#[rustler::nif(schedule = "DirtyCpu")]
+fn jpeg2000_decode<'a>(env: Env<'a>, data: Binary<'a>, meta: Term<'a>) -> Term<'a> {
+    decode_frame(env, &data, meta, jpeg2000::decode)
 }
 
-// -- JPEG 2000 --
-
-#[rustler::nif]
-fn jpeg2000_decode<'a>(env: Env<'a>, data: Binary<'a>, meta: Metadata) -> NifResult<Binary<'a>> {
-    let raw = jpeg2000::decode(data.as_slice(), &meta)
-        .map_err(|e| rustler::Error::Term(Box::new(format!("jpeg2000_decode: {e}"))))?;
-
-    let mut out = OwnedBinary::new(raw.len()).ok_or(rustler::Error::Atom("alloc_failed"))?;
-    out.as_mut_slice().write_all(&raw).map_err(|_| rustler::Error::Atom("write_failed"))?;
-    Ok(out.release(env))
+#[rustler::nif(schedule = "DirtyCpu")]
+fn jpeg2000_encode<'a>(env: Env<'a>, data: Binary<'a>, meta: Term<'a>) -> Term<'a> {
+    encode_frame(env, &data, meta, jpeg2000::encode)
 }
 
-#[rustler::nif]
-fn jpeg2000_encode<'a>(env: Env<'a>, data: Binary<'a>, meta: Metadata) -> NifResult<Binary<'a>> {
-    let compressed = jpeg2000::encode(data.as_slice(), &meta)
-        .map_err(|e| rustler::Error::Term(Box::new(format!("jpeg2000_encode: {e}"))))?;
-
-    let mut out =
-        OwnedBinary::new(compressed.len()).ok_or(rustler::Error::Atom("alloc_failed"))?;
-    out.as_mut_slice()
-        .write_all(&compressed)
-        .map_err(|_| rustler::Error::Atom("write_failed"))?;
-    Ok(out.release(env))
+#[rustler::nif(schedule = "DirtyCpu")]
+fn jpegls_decode<'a>(env: Env<'a>, data: Binary<'a>, meta: Term<'a>) -> Term<'a> {
+    decode_frame(env, &data, meta, jpegls::decode)
 }
 
-// -- JPEG-LS --
-
-#[rustler::nif]
-fn jpegls_decode<'a>(env: Env<'a>, data: Binary<'a>, meta: Metadata) -> NifResult<Binary<'a>> {
-    let raw = jpegls::decode(data.as_slice(), &meta)
-        .map_err(|e| rustler::Error::Term(Box::new(format!("jpegls_decode: {e}"))))?;
-
-    let mut out = OwnedBinary::new(raw.len()).ok_or(rustler::Error::Atom("alloc_failed"))?;
-    out.as_mut_slice().write_all(&raw).map_err(|_| rustler::Error::Atom("write_failed"))?;
-    Ok(out.release(env))
+#[rustler::nif(schedule = "DirtyCpu")]
+fn jpegls_encode<'a>(env: Env<'a>, data: Binary<'a>, meta: Term<'a>) -> Term<'a> {
+    encode_frame(env, &data, meta, jpegls::encode)
 }
 
-#[rustler::nif]
-fn jpegls_encode<'a>(env: Env<'a>, data: Binary<'a>, meta: Metadata) -> NifResult<Binary<'a>> {
-    let compressed = jpegls::encode(data.as_slice(), &meta)
-        .map_err(|e| rustler::Error::Term(Box::new(format!("jpegls_encode: {e}"))))?;
+fn decode_frame<'a>(env: Env<'a>, data: &[u8], meta: Term<'a>, decoder: Decoder) -> Term<'a> {
+    let result = Metadata::from_term(meta).and_then(|meta| {
+        let image = error::catch_panic(|| decoder(data, &meta))?;
+        meta.check_decoded(&image)?;
+        Ok(image.data)
+    });
+    reply(env, result)
+}
 
-    let mut out =
-        OwnedBinary::new(compressed.len()).ok_or(rustler::Error::Atom("alloc_failed"))?;
-    out.as_mut_slice()
-        .write_all(&compressed)
-        .map_err(|_| rustler::Error::Atom("write_failed"))?;
-    Ok(out.release(env))
+fn encode_frame<'a>(env: Env<'a>, data: &[u8], meta: Term<'a>, encoder: Encoder) -> Term<'a> {
+    let result = Metadata::from_term(meta).and_then(|meta| {
+        meta.check_raw_len(data.len())?;
+        error::catch_panic(|| encoder(data, &meta))
+    });
+    reply(env, result)
+}
+
+fn reply(env: Env<'_>, result: Result<Vec<u8>, CodecError>) -> Term<'_> {
+    use rustler::Encoder as _;
+
+    result
+        .and_then(|bytes| {
+            let mut binary = rustler::OwnedBinary::new(bytes.len())
+                .ok_or_else(|| CodecError::Internal("out of memory".into()))?;
+            binary.as_mut_slice().copy_from_slice(&bytes);
+            Ok(binary.release(env))
+        })
+        .encode(env)
 }
 
 rustler::init!("Elixir.DicomCodecs.Native");

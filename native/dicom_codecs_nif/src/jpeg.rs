@@ -1,50 +1,72 @@
-use crate::Metadata;
-use std::io::Cursor;
+use crate::error::CodecError;
+use crate::frame::{Image, Metadata};
+use jpeg_decoder::PixelFormat;
+use jpeg_encoder::ColorType;
 
-/// Decode a JPEG frame to raw pixel data.
+/// Quality of the lossy baseline encoder (1–100). From 90 up `jpeg-encoder`
+/// keeps full chroma resolution (4:4:4).
+const ENCODE_QUALITY: u8 = 95;
+
+/// Decodes a JPEG frame with `jpeg-decoder`.
 ///
-/// Handles 8-bit and 12/16-bit lossless JPEG. The decoder auto-detects
-/// the JPEG process from the SOF marker in the bitstream.
-pub fn decode(data: &[u8], _meta: &Metadata) -> Result<Vec<u8>, String> {
-    let mut decoder = jpeg_decoder::Decoder::new(Cursor::new(data));
-    let pixels = decoder.decode().map_err(|e| format!("JPEG decode failed: {e}"))?;
+/// Handles 8-bit baseline and extended (lossy) streams, and lossless streams
+/// (process 14, any predictor) of 2 to 16 bits. Three-component lossy streams
+/// are converted to RGB; lossless samples are returned as stored. 12-bit lossy
+/// streams (extended process 4) are rejected by the decoder.
+pub fn decode(data: &[u8], meta: &Metadata) -> Result<Image, CodecError> {
+    let mut decoder = jpeg_decoder::Decoder::new(data);
+    // Refuse to allocate more samples than the frame the metadata describes.
+    decoder.set_max_decoding_buffer_size(
+        meta.rows as usize * meta.columns as usize * meta.samples_per_pixel as usize,
+    );
 
-    let info = decoder.info().ok_or("JPEG: no image info after decode")?;
+    let pixels = decoder
+        .decode()
+        .map_err(|e| CodecError::DecodeFailed(format!("JPEG: {e}")))?;
+    let info = decoder
+        .info()
+        .ok_or_else(|| CodecError::Internal("JPEG: no image info after decode".into()))?;
 
-    // For 16-bit JPEG (lossless), pixels are already in native byte order
-    // For 8-bit, pixels are raw bytes
-    // Return as-is — the caller (Dicom.PixelData) handles photometric conversion
-    let _ = info; // metadata available if needed for future photometric conversion
-    Ok(pixels)
-}
-
-/// Encode raw pixels to JPEG baseline.
-///
-/// Uses 8-bit baseline JPEG with quality 95. For DICOM, lossy JPEG
-/// encoding is typically used for display/web purposes, not archival.
-pub fn encode(raw_pixels: &[u8], meta: &Metadata) -> Result<Vec<u8>, String> {
-    let width = meta.columns as u16;
-    let height = meta.rows as u16;
-
-    let color_type = match meta.samples_per_pixel {
-        3 => jpeg_encoder::ColorType::Rgb,
-        1 => jpeg_encoder::ColorType::Luma,
-        n => return Err(format!("JPEG encode: unsupported samples_per_pixel={n}")),
+    let components = match info.pixel_format {
+        PixelFormat::L8 | PixelFormat::L16 => 1,
+        PixelFormat::RGB24 => 3,
+        PixelFormat::CMYK32 => return Err(CodecError::Unsupported("JPEG: CMYK streams".into())),
+    };
+    // `pixel_format` says RGB24 even for 16-bit lossless colour, so derive the
+    // sample width from the buffer instead.
+    let samples = info.width as usize * info.height as usize * components as usize;
+    let bytes_per_sample = if samples == 0 {
+        0
+    } else {
+        pixels.len() / samples
     };
 
-    let encoder = jpeg_encoder::Encoder::new_file(
-        &mut Vec::new(), // temporary, we'll use encode_to_vec
-        95,
-    )
-    .map_err(|e| format!("JPEG encoder init: {e}"))?;
+    Ok(Image {
+        width: info.width.into(),
+        height: info.height.into(),
+        components,
+        bytes_per_sample,
+        data: pixels,
+    })
+}
 
-    // Use a buffer approach
+/// Encodes an 8-bit greyscale or RGB frame as lossy baseline JPEG (process 1).
+pub fn encode(raw: &[u8], meta: &Metadata) -> Result<Vec<u8>, CodecError> {
+    if meta.bits_allocated != 8 {
+        return Err(CodecError::Unsupported(format!(
+            "JPEG baseline encoding needs 8-bit samples, got bits_allocated {}",
+            meta.bits_allocated
+        )));
+    }
+    let color_type = match meta.samples_per_pixel {
+        1 => ColorType::Luma,
+        _ => ColorType::Rgb,
+    };
+
     let mut output = Vec::new();
-    let enc = jpeg_encoder::Encoder::new(&mut output, 95)
-        .map_err(|e| format!("JPEG encoder init: {e}"))?;
-
-    enc.encode(raw_pixels, width, height, color_type)
-        .map_err(|e| format!("JPEG encode failed: {e}"))?;
-
+    jpeg_encoder::Encoder::new(&mut output, ENCODE_QUALITY)
+        // validate() caps rows and columns at u16::MAX.
+        .encode(raw, meta.columns as u16, meta.rows as u16, color_type)
+        .map_err(|e| CodecError::EncodeFailed(format!("JPEG: {e}")))?;
     Ok(output)
 }

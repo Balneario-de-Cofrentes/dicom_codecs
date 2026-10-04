@@ -41,4 +41,14 @@ defmodule DicomCodecsTest do
       assert length(Enum.uniq(all_uids)) == 8
     end
   end
+
+  describe "register_all/0" do
+    test "registers every codec for each of its transfer syntaxes" do
+      assert DicomCodecs.register_all() == :ok
+
+      for codec <- DicomCodecs.codecs(), uid <- codec.transfer_syntax_uids() do
+        assert Dicom.Codec.Registry.lookup(uid) == {:ok, codec}
+      end
+    end
+  end
 end
