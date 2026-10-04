@@ -1,6 +1,6 @@
 # Changelog
 
-## Unreleased
+## 0.1.0 - 2026-10-05
 
 ### Added
 
@@ -19,4 +19,4 @@
 - Every NIF runs on a dirty CPU scheduler.
 - Decoded frames are checked against the metadata before allocating, which also covers CharLS advisory GHSA-mqrg-gfc8-73ff.
 - JPEG 2000 encoding writes a raw J2K codestream and applies the reversible colour transform only for `YBR_RCT`.
-- The NIF is built from source while no precompiled release (checksum file) exists.
+- Precompiled NIFs for macOS and Linux (glibc), arm64 and x86_64; other targets build from source with `DICOM_CODECS_BUILD=1`.

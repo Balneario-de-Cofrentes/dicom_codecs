@@ -6,14 +6,16 @@ defmodule DicomCodecs.Native do
   # `{:error, {reason, message}}`.
   #
   # Precompiled NIFs are downloaded only when the package ships the checksum file
-  # that `mix rustler_precompiled.download` writes at release time. Without it, or
-  # with DICOM_CODECS_BUILD=1, the crate is compiled from source.
+  # that `mix rustler_precompiled.download` writes at release time. Without it,
+  # with DICOM_CODECS_BUILD=1, or in this repo's dev and test environments, the
+  # crate is compiled from source. (Mix compiles dependencies in :prod, so
+  # consumers still download the binaries.)
 
   mix_config = Mix.Project.config()
   version = mix_config[:version]
   github_url = mix_config[:package][:links]["GitHub"]
 
-  checksum_file = Path.expand("../../checksum-#{inspect(__MODULE__)}.exs", __DIR__)
+  checksum_file = Path.expand("../../checksum-#{__MODULE__}.exs", __DIR__)
   @external_resource checksum_file
 
   use RustlerPrecompiled,
@@ -21,7 +23,8 @@ defmodule DicomCodecs.Native do
     crate: "dicom_codecs_nif",
     base_url: "#{github_url}/releases/download/v#{version}",
     force_build:
-      System.get_env("DICOM_CODECS_BUILD") in ["1", "true"] or not File.exists?(checksum_file),
+      System.get_env("DICOM_CODECS_BUILD") in ["1", "true"] or
+        not File.exists?(checksum_file) or Mix.env() in [:dev, :test],
     # Keep in sync with .github/workflows/release.yml. Other targets need DICOM_CODECS_BUILD=1.
     targets: ~w(
       aarch64-apple-darwin
