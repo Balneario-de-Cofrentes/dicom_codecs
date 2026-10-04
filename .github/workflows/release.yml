@@ -51,25 +51,36 @@ jobs:
         with:
           targets: ${{ matrix.job.target }}
 
+      # Same steps and file names as philss/rustler-precompiled-action, whose
+      # v1.1.5 installs cross even with use-cross false and then fails on
+      # macOS and Linux arm64 runners.
       - name: Build the NIF
-        id: build-crate
-        uses: philss/rustler-precompiled-action@v1.1.5
-        with:
-          project-name: dicom_codecs_nif
-          project-version: ${{ env.PROJECT_VERSION }}
-          target: ${{ matrix.job.target }}
-          nif-version: ${{ matrix.nif }}
-          # No use-cross input: the action treats any value, even "false", as true.
-          project-dir: native/dicom_codecs_nif
+        shell: bash
+        working-directory: native/dicom_codecs_nif
+        run: cargo build --release --target "${{ matrix.job.target }}"
+
+      - name: Package the NIF
+        id: package
+        shell: bash
+        run: |
+          case "${{ matrix.job.target }}" in
+            *-apple-*) built=libdicom_codecs_nif.dylib ;;
+            *) built=libdicom_codecs_nif.so ;;
+          esac
+          # RustlerPrecompiled expects a .so name on every Unix, macOS included.
+          name="libdicom_codecs_nif-v${PROJECT_VERSION}-nif-${{ matrix.nif }}-${{ matrix.job.target }}.so"
+          cp "native/dicom_codecs_nif/target/${{ matrix.job.target }}/release/${built}" "${name}"
+          tar -czf "${name}.tar.gz" "${name}"
+          echo "file=${name}.tar.gz" >> "$GITHUB_OUTPUT"
 
       - uses: actions/upload-artifact@v4
         with:
-          name: ${{ steps.build-crate.outputs.file-name }}
-          path: ${{ steps.build-crate.outputs.file-path }}
+          name: ${{ steps.package.outputs.file }}
+          path: ${{ steps.package.outputs.file }}
 
       - uses: softprops/action-gh-release@v2
         with:
           tag_name: ${{ env.TAG }}
           files: |
-            ${{ steps.build-crate.outputs.file-path }}
+            ${{ steps.package.outputs.file }}
             THIRD_PARTY_NOTICES.md
