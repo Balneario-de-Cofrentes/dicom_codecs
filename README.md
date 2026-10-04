@@ -52,7 +52,7 @@ Decoded frames are native pixel data: little-endian, interleaved by pixel, `bits
 | JPEG 2000 | `1.2.840.10008.1.2.4.91` | `openjp2` | lossless output |
 | RLE Lossless | `1.2.840.10008.1.2.5` | built into `dicom` | built into `dicom` |
 
-`Dicom.Codec.encode/2` does not receive the Transfer Syntax, so each codec has one encoder: the JPEG codec always writes 8-bit Baseline, the others always write lossless streams. `openjp2` is OpenJPEG ported to Rust; CharLS is C++ and links statically through `charls-sys`.
+The `encode/2` callback of `Dicom.Codec` does not receive the Transfer Syntax, so each codec has one encoder: the JPEG codec always writes 8-bit Baseline, the others always write lossless streams. `openjp2` is OpenJPEG ported to Rust; CharLS is C++ and links statically through `charls-sys`.
 
 ## Not supported
 

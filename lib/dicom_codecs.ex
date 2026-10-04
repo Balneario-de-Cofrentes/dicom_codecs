@@ -72,7 +72,7 @@ defmodule DicomCodecs do
   Registers all codecs with `Dicom.Codec.Registry`.
 
   Called automatically at application startup. Can also be called manually
-  if you need to re-register after a `Registry.reset/0`.
+  if you need to re-register after a `Dicom.Codec.Registry.reset/0`.
   """
   @spec register_all() :: :ok
   def register_all do
