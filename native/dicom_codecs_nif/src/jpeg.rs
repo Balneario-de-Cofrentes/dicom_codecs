@@ -35,11 +35,7 @@ pub fn decode(data: &[u8], meta: &Metadata) -> Result<Image, CodecError> {
     // `pixel_format` says RGB24 even for 16-bit lossless colour, so derive the
     // sample width from the buffer instead.
     let samples = info.width as usize * info.height as usize * components as usize;
-    let bytes_per_sample = if samples == 0 {
-        0
-    } else {
-        pixels.len() / samples
-    };
+    let bytes_per_sample = pixels.len().checked_div(samples).unwrap_or(0);
 
     Ok(Image {
         width: info.width.into(),

@@ -69,7 +69,7 @@ Decoding or encoding a frame takes milliseconds to seconds, far over the 1 ms a 
 
 ## Precompiled NIFs and building from source
 
-Releases ship precompiled NIFs (NIF 2.15, which loads on OTP 22 and later) for `aarch64-apple-darwin`, `x86_64-apple-darwin`, `aarch64-unknown-linux-gnu` and `x86_64-unknown-linux-gnu` (glibc 2.35 or later). Before the first release the crate is always compiled from source; after it, set `DICOM_CODECS_BUILD=1` to compile on other targets (musl, Windows) or to skip the download. Building needs `{:rustler, "~> 0.38"}` in your deps, a Rust toolchain (tested with 1.94), CMake and a C++ compiler (for CharLS). Only 64-bit little-endian targets are supported.
+Releases ship precompiled NIFs (NIF 2.15, which loads on OTP 22 and later) for `aarch64-apple-darwin`, `x86_64-apple-darwin`, `aarch64-unknown-linux-gnu` and `x86_64-unknown-linux-gnu` (glibc 2.35 or later). Before the first release the crate is always compiled from source; after it, set `DICOM_CODECS_BUILD=1` to compile on other targets (musl, Windows) or to skip the download. Building needs `{:rustler, "~> 0.38"}` in your deps, a Rust toolchain (tested with 1.94 and 1.99), CMake and a C++ compiler (for CharLS). Only 64-bit little-endian targets are supported.
 
 ## Tests
 

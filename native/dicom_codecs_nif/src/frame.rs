@@ -184,8 +184,10 @@ impl Metadata {
         match self.bytes_per_sample() {
             1 => raw.iter().map(|&b| stored(b as u32)).collect(),
             _ => raw
-                .chunks_exact(2)
-                .map(|c| stored(u16::from_le_bytes([c[0], c[1]]) as u32))
+                .as_chunks::<2>()
+                .0
+                .iter()
+                .map(|&pair| stored(u16::from_le_bytes(pair) as u32))
                 .collect(),
         }
     }
